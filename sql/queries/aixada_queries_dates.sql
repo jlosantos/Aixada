@@ -1,174 +1,82 @@
 delimiter |
 
 
-
-
-
-/**
- * returns all those dates that are orderable but for which 
- * there are no items ordered yet. 
- */
-/*
-drop procedure if exists get_empty_orderable_dates|
-create procedure get_empty_orderable_dates()
-begin
-	select 
-		od.orderable_date 
-	from 
-		aixada_orderable_dates od 
-		left join aixada_order_item oi
-	on 
-		(od.orderable_date = oi.date_for_order)
-	where 
-		oi.date_for_order is null
-		and od.orderable_date >= date(sysdate());
-end|
-*/
-
-  
-/**
- *  returns all those dates for which there are ordered items
- */
-/*
-drop procedure if exists get_nonempty_orderable_dates|
-create procedure get_nonempty_orderable_dates()
-begin
-	select distinct date_for_order 
-	from aixada_order_item
-	where date_for_order >= date(sysdate());
-end|
-*/
-
-
 /**
  * returns all orderable dates, irrespective if they have ordered items or not. 
- * this correspond basically to the entries in aixada_order_dates
+ *
  */
-/*
-drop procedure if exists get_all_orderable_dates|
-create procedure get_all_orderable_dates()
+drop procedure if exists get_orderable_dates|
+create procedure get_orderable_dates(in from_date date, in the_limit int)
 begin
-	select orderable_date 
-	from aixada_orderable_dates
-	where orderable_date >= date(sysdate());
+	declare from_date_onward date default from_date;
+	
+  	if from_date = 0 then 
+  		set from_date_onward = date(sysdate()); 
+  	end if;
+		
+	set @q = concat("select distinct
+		po.date_for_order
+	from 
+		aixada_product_orderable_for_date po
+	where
+		po.date_for_order > '", from_date_onward,"'
+	order by
+		po.date_for_order asc
+	limit ", the_limit , ";");
+
+	prepare st from @q;
+  	execute st;
+  	deallocate prepare st;
 end|
-*/
-
-
-
 
 
 /**
- * 
+ * returns list of open orders from today onwards until a 
+ * certain date in the near future. This is used to get an overview
+ * of which orders are upcoming and about to close. 
  */
-/*
-drop procedure if exists get_sometimes_orderable_dates|
-create procedure get_sometimes_orderable_dates()
+drop procedure if exists get_upcoming_orders|
+create procedure get_upcoming_orders (in until date)
 begin
-	select 
-		od.orderable_date
-	from 
-		aixada_orderable_dates od,
+	
+	declare today date default date(sysdate()); 
+	
+	select distinct
+		po.date_for_order,
+		pv.name as provider_name,
+		po.closing_date,
+		datediff(po.closing_date, today) as time_left
+	from
 		aixada_product_orderable_for_date po,
-		aixada_product pr
-	where 
-		od.orderable_date = po.date_for_order
-		and po.product_id = pr.id
-		and pr.orderable_type_id = 2
-		and orderable_date >= date(sysdate());
-end|
-*/
+		aixada_provider pv,
+		aixada_product p
+	where
+		po.closing_date >= today
+		and po.date_for_order <= until
+		and po.product_id = p.id
+		and p.provider_id = pv.id
+	order by 
+		po.closing_date asc; 
+end |
 
 
 
 /**
- * insert into aixada_orderable_date new dates available for ordering.
- * and, activate always orderable products for this date. 
+ * returns dates that have unvalidated shopping carts. 
  */
-/*
-drop procedure if exists add_orderable_date|
-create procedure add_orderable_date(in the_date date)
+drop procedure if exists dates_with_unvalidated_shop_carts|
+create procedure dates_with_unvalidated_shop_carts ()
 begin
-	replace into aixada_orderable_dates
-	values (the_date);
-	
-	/* activate always orderable products*/
-	insert into aixada_product_orderable_for_date (
-		product_id, 
-		date_for_order, 
-		closing_date)
-	select 
-		p.id,
-		the_date,
-		subdate(the_date, pv.offset_order_close)
-	from 
-		aixada_product p,
-		aixada_provider pv		
-	where 
-		p.orderable_type_id = 3
-		and p.active = 1
-		and p.provider_id = pv.id; 
-end|
-*/
-
-
-/**
- * delete dates from aixada_orderable_date. also delete always orderable products 
- * associated with this date 
- */
-/*
-drop procedure if exists del_orderable_date|
-create procedure del_orderable_date(in the_date date)
-begin
-	declare hasOrderItems int;
-	
-	select 
-		count(*) into hasOrderItems
-	from aixada_order_item
-	where date_for_order = the_date; 
-	
-	if hasOrderItems = 0 then
-		delete from aixada_orderable_dates 
-		where orderable_date = the_date;
-	end if;
-
-end|
-*/
-
-
-
-
-/*
-drop procedure if exists get_sales_dates|
-create procedure get_sales_dates(in the_date date, in num int)
-begin
-  declare start_date date default the_date;
-  if start_date = 0 then set start_date = date(sysdate()); end if;
-  set @q = concat("select distinct date_for_order from aixada_order_item where date_for_order > '",
-        start_date, "' limit ", num);
-  prepare st from @q;
-  execute st;
-  deallocate prepare st;
+  select distinct 
+  	date_for_shop as date_for_validation
+  from 
+  	aixada_cart 
+  where 
+  	ts_validated = 0
+  order by 
+  	date_for_shop desc;
 end|
 
-drop procedure if exists get_next_equal_shop_date|
-create procedure get_next_equal_shop_date()
-begin
-  select date_for_order 
-  from aixada_product_orderable_for_date 
-  where date_for_order >= date(sysdate()) 
-  limit 1;
-end|
 
-drop procedure if exists shopping_dates|
-create procedure shopping_dates()
-begin
-   declare d0 date default sysdate();
-   declare d1 date default date_add(d0, interval 3 month);
-   select shopping_date, available 
-   from aixada_shopping_dates d
-   where shopping_date between d0 and d1;
-end|
-*/
 
 delimiter ;

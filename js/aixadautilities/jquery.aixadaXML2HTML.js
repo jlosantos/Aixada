@@ -9,7 +9,7 @@
 			  init : function( options ) {
 
 		 		var settings = {
-					url         	: 'ctrlShopAndOrder.php',				
+					url         	: 'php/ctrl/ShopAndOrder.php',				
 					params 			: 'oper=listProviders',
 					rowName			: 'row', 
 					xml 			: null,							//the xml once loaded/received
@@ -37,7 +37,7 @@
 					}
 	   					
 					var $this = $(this);
-					data = $this.data('xml2html');
+					var data = $this.data('xml2html');
 	   	
 					//if an offset is specified, then we look for a list header
 					//the container element can have a list header which can be specified with the lt(index) which counts
@@ -110,6 +110,11 @@
 	  			return $(this).data('xml2html').xml;
 	  		},
 	  		
+	  		getTemplate : function(){
+	  			return $(this).data('xml2html').tpl;
+	  			
+	  		},
+	  		
 	  		reload : function( options ) {
 					
 	  			
@@ -128,7 +133,7 @@
 				    	var rowName =  $this.data('xml2html').rowName;
 	    	
 				    	//load the initial list
-				    	$.ajax({
+				    	$.ajaxQueue({
 									type: type,
 									url: url + "?" + params,		
 									dataType: "xml", 
@@ -165,7 +170,7 @@
 	  							   complete : function(msg){
 	  							 	
 	  							    }
-						});	//end ajax
+						});	//end
 				    	
 				    	
 				    	

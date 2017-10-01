@@ -1,19 +1,18 @@
-
 /***********************************************
  *	Aixada DB Structure 
  *
  **********************************************/
 
+
 /**
- *  If a table has two or more foreign keys that reference the same 
- *  external table, the field names should be of the form 
- *  {external table}_{external key name}_{internal name of the field}
- *  For example 
- *  aixada_product.unit_measure_order_id,
- *  aixada_product.unit_measure_shop_id,
- *  aixada_uf_account.aixada_member_member,
- *  aixada_uf_account.aixada_member_operator 
- **/
+ *  db version + upgrade history
+ */
+create table aixada_version (
+  id int not null auto_increment,
+  module_name varchar(100) default 'main' not null,
+  version varchar(42) not null,
+  primary key(id)
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
 
@@ -27,7 +26,7 @@ create table aixada_uf (
   created			timestamp 		default current_timestamp,
   mentor_uf         int             default null,
   primary key (id)
-) engine=InnoDB default character set utf8;
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
 
@@ -36,6 +35,7 @@ create table aixada_uf (
  */
 create table aixada_member (
   id 	       		int				not null auto_increment,
+  custom_member_ref	varchar(100)	default null,
   uf_id      		int,
   name	     		varchar(255) 	not null,
   address			varchar(255) 	not null,
@@ -45,6 +45,8 @@ create table aixada_member (
   phone1    		varchar(50) 	default null,
   phone2			varchar(50) 	default null,
   web				varchar(255) 	default null,
+  bank_name 		varchar(255) 	default null, 
+  bank_account 		varchar(40) 	default null,
   picture           varchar(255)    default null,
   notes  	 		text 			default null,
   active     	  	tinyint			default 1, 
@@ -53,7 +55,7 @@ create table aixada_member (
   ts			  	timestamp not null default current_timestamp,
   primary key (id),
   foreign key (uf_id)  references aixada_uf(id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8;
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
 /**
@@ -78,12 +80,14 @@ create table aixada_provider (
   notes  			text 			default null,
   active     	  	tinyint 		default 1,
   responsible_uf_id	int     		default null,
-  offset_order_close int			default 1, 			/* default offset closing of order in days*/
+  offset_order_close int			default 4, 			/* default offset closing of order in days*/
+  order_send_format varchar(25)     default 'default',
+  order_send_prices varchar(15)     default 'default',
   ts			  	timestamp 		not null default current_timestamp,
   primary key (id),
   key (active),
   foreign key (responsible_uf_id) references aixada_uf(id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8;
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
 
@@ -108,7 +112,7 @@ create table aixada_user (
   foreign key (uf_id) references aixada_uf(id),
   foreign key (member_id) references aixada_member(id),
   foreign key (provider_id) references aixada_provider(id)  
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8;
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
 /**
@@ -119,7 +123,7 @@ create table aixada_user_role (
   role  			varchar(100)	not null,
   primary key (user_id, role),
   foreign key (user_id)	references aixada_user(id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8;
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
   
 
 /**
@@ -129,7 +133,7 @@ create table aixada_product_category (
   id   				int				not null,
   description		varchar(255) 	not null, 
   primary key (id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8;
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
 /**
@@ -139,18 +143,7 @@ create table aixada_orderable_type (
   id   				tinyint			not null auto_increment,
   description		varchar(255) 	not null, 
   primary key (id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8;
-
-
-/**
- * iva types associated then to different products
- */
-create table aixada_iva_type (
-  id   				tinyint			not null auto_increment,
-  percent			smallint 		not null, 
-  primary key (id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8;
-
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
 /**
@@ -158,20 +151,34 @@ create table aixada_iva_type (
  *      stores the possible unit measures (kg, piece, 500g etc)
  */
 create table aixada_unit_measure (
-  id   	     		tinyint		 not null auto_increment,
+  id   	     		smallint     not null auto_increment,
+  name 				varchar(255) not null,
   unit				varchar(50)	 not null,
   primary key (id)
-) engine=InnoDB default character set utf8;
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
 
 create table aixada_rev_tax_type (
-  id   	     		tinyint		 not null auto_increment,
-  description		varchar(50)	 not null,
+  id   	     		tinyint		 	not null auto_increment,
+  name              varchar(255)    not null,
+  description		varchar(50)	 	not null,
   rev_tax_percent	decimal(10,2),
   primary key (id)
-) engine=InnoDB default character set utf8;
-  
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
+ 
+
+/**
+ * iva types associated then to different products
+ */
+create table aixada_iva_type (
+  id   			     	smallint		not null auto_increment,
+  name                  varchar(255) 	not null, 
+  percent				decimal(10,2) 	not null, 
+  description 		    varchar(100)	default null,
+  primary key (id)
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
+
 
 /**
  * product
@@ -182,15 +189,21 @@ create table aixada_rev_tax_type (
   name	     	      	varchar(255) 	not null,
   description	      	text,
   barcode 	 			varchar(50)		default null,
+  custom_product_ref	varchar(100)	default null,		
   active     	      	tinyint			default 1,
   responsible_uf_id     int             default null,
-  orderable_type_id	tinyint				default 2,
+  orderable_type_id		tinyint			default 2,
+    /* 1-> Stoc
+     * 2-> Orderrable
+     * 3-> Order-notes
+     */
+  order_min_quantity	decimal(10,4)	default 0,
   category_id	      	int				default 1,
   rev_tax_type_id		tinyint			default 1,
+  iva_percent_id  	    smallint 		default 1,
   unit_price       		decimal(10,2) 	default 0.0,
-  iva_percent  	      	decimal(10,2) 	default 8,
-  unit_measure_order_id	tinyint			default 1,
-  unit_measure_shop_id	tinyint			default 1,
+  unit_measure_order_id smallint        default 1,
+  unit_measure_shop_id  smallint        default 1,
   stock_min    	      	decimal(10,4) 	default 0, 
   stock_actual 	      	decimal(10,4) 	default 0, 
   delta_stock           decimal(10,4)   default 0,
@@ -198,25 +211,20 @@ create table aixada_rev_tax_type (
   picture 				varchar(255) 	default null,
   ts			  		timestamp 		not null default current_timestamp,
   primary key (id),
-  foreign key (provider_id)    references aixada_provider(id) on delete cascade,
+  foreign key (provider_id)    			references aixada_provider(id) on delete cascade,
           key (active),
-  foreign key (responsible_uf_id) references aixada_uf(id),
-  foreign key (orderable_type_id)    references aixada_orderable_type(id),
-  foreign key (category_id)    references aixada_product_category(id),
-  foreign key (rev_tax_type_id)    references aixada_rev_tax_type(id),
-  foreign key (unit_measure_order_id) references aixada_unit_measure(id),
-  foreign key (unit_measure_shop_id) references aixada_unit_measure(id),
-  key(delta_stock)
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8;
+  foreign key (responsible_uf_id) 		references aixada_uf(id),
+  foreign key (orderable_type_id)   	references aixada_orderable_type(id),
+  foreign key (category_id)    			references aixada_product_category(id),
+  foreign key (rev_tax_type_id)    		references aixada_rev_tax_type(id),
+  foreign key (iva_percent_id)			references aixada_iva_type(id),
+  foreign key (unit_measure_order_id) 	references aixada_unit_measure(id),
+  foreign key (unit_measure_shop_id) 	references aixada_unit_measure(id),
+  		  key (delta_stock),
+  unique  key (custom_product_ref, provider_id)
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
-/**
- * allowed days for ordering
- */
-create table aixada_orderable_dates (
-  orderable_date    date not null,
-  primary key(orderable_date)
-) engine=InnoDB default character set utf8;  
 
 
 /**
@@ -226,82 +234,138 @@ create table aixada_product_orderable_for_date (
   id   	                int     	not null auto_increment,
   product_id   	     	int     	not null,
   date_for_order        date    	not null,
-  closing_date 			datetime 	not null,
-  primary key (id),
-  foreign key (product_id)     	references aixada_product(id)
-) engine=InnoDB default character set utf8;       
-  
+  closing_date 			datetime 	default null,
+  primary 	key (id),
+  			key (date_for_order),
+  foreign 	key (product_id) references aixada_product(id),
+  unique 	key (product_id, date_for_order)
+) engine=InnoDB default character set utf8 collate utf8_general_ci;       
+ 
+
+/**
+ * aixada_order
+ */
+create table aixada_order (
+	id 				int 			not null auto_increment,
+	provider_id		int				not null,
+	date_for_order	date			not null,
+	ts_sent_off		timestamp		default 0,	
+	date_received	date			default null,
+	date_for_shop	date			default null,
+	total			decimal(10,2)	default 0,
+	notes			varchar(255)	default null,	
+	revision_status	int				default 1,
+	delivery_ref	varchar(255)	default null,
+	payment_ref		varchar(255)	default null,
+	primary key (id),
+	key (date_for_order),
+	key (date_for_shop),
+	key (ts_sent_off),
+	foreign key (provider_id) references aixada_provider(id),
+	foreign key (date_for_order) references aixada_product_orderable_for_date(date_for_order),
+	unique key (date_for_order, provider_id, ts_sent_off)
+) engine=InnoDB default character set utf8 collate utf8_general_ci;     
+
+
+/**
+ * used for grouping either entries in aixada_order_items or aixada_shop_items. Order items can
+ * be grouped for favorite order carts. Shop items are always grouped through the aixada_cart(id)
+ */
+create table aixada_cart (
+	id 				int 			not null auto_increment,
+	name			varchar(255)	default null,
+	uf_id 			int 			not null,
+	date_for_shop	date			not null,
+	operator_id		int				default null,
+	ts_validated	timestamp		default 0, 
+	ts_last_saved	timestamp		default current_timestamp,
+	primary key (id),
+	key (date_for_shop),
+	foreign key (uf_id) references aixada_uf(id),
+	foreign key (operator_id) references aixada_user(id),
+	unique key (uf_id, date_for_shop, ts_validated)
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
+
 
 /**
  *	aixada_order_item. 
- *	stores order for a specific item for a specific date/uf. 
  */
 create table aixada_order_item (
   id  	     		int		  	not null auto_increment,
-  date_for_order 	date 		not null, 
-  closing_date 		datetime 	not null,
   uf_id     	  	int 		not null,	
+  favorite_cart_id	int			default null,
+  order_id			int 		default null,
+  unit_price_stamp	decimal(14,6)	default 0,
+  iva_percent		decimal(5,2)	default 0,
+  rev_tax_percent	decimal(5,2)	default 0,
+  date_for_order 	date		not null,
   product_id	  	int 		not null,	
-  quantity 	  		float(10,4) default 0.0,				
+  quantity 	  		float(10,4) default 0.0,
+  notes    	  		text,
   ts_ordered   	  	timestamp 	default current_timestamp,
   primary key (id),
+  foreign key (order_id) references aixada_order(id),
   foreign key (uf_id) references aixada_uf(id),
   foreign key (product_id) references aixada_product(id),
-  foreign key (date_for_order) references aixada_orderable_dates(orderable_date),
-  unique  key (date_for_order, uf_id, product_id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8;
+  foreign key (favorite_cart_id) references aixada_cart(id),
+  foreign key (product_id, date_for_order) references aixada_product_orderable_for_date(product_id, date_for_order),
+  unique  key (order_id, uf_id, product_id)
+) engine=InnoDB default character set utf8 collate utf8_general_ci; 
 
-
-
-/**
- * stores favorite order lists 
- */
-create table aixada_favorite_order_cart (
-  id 			int     		not null auto_increment,
-  uf_id			int				not null,
-  name	 		varchar(255)	not null,
-  primary key (id),
-  foreign key (uf_id) references aixada_uf(id),
-  key (name)
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8;
-
-
-/**
- *  connects favorite order lists with their items
- */
-create table aixada_favorite_order_item (
-  id  	     				int		not null auto_increment,
-  favorite_order_cart_id	int 		not null,
-  uf_id     	  			int 		not null,	
-  product_id	  			int 		not null,	
-  quantity 	  				float(10,4)	default 0.0,	
-  ts_ordered   	  	timestamp 	default current_timestamp,
-  primary key (id),
-  foreign key (favorite_order_cart_id) references aixada_favorite_order_cart(id),
-  foreign key (uf_id) references aixada_uf(id),
-  foreign key (product_id) references aixada_product(id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8;
 
 
 /**
  *	stores the individual product items, quantity, price for a given sale. 
+ *  the unit_price_stamp field stores price incl. iva + rev tax! 
  */
 create table aixada_shop_item (
-  id 	          	int			not null auto_increment,
-  uf_id				int			not null,
-  date_for_shop		date 		not null,
-  product_id  		int 		not null,
-  quantity      	float(10,4) default 0.0,		
-  ts_validated 		timestamp 	default 0,
-  operator_id   	int 		default null, 
+  id 	          	int				not null auto_increment,
+  cart_id			int				not null,
+  order_item_id		int				default null,
+  unit_price_stamp	decimal(14,6)	default 0,
+  product_id  		int 			not null,
+  quantity      	float(10,4) 	default 0.0,
+  iva_percent		decimal(10,2)	default 0,
+  rev_tax_percent	decimal(10,2)	default 0,
   primary key (id),
-  foreign key (uf_id) references aixada_uf(id),
-  key (date_for_shop),
+  foreign key (cart_id) references aixada_cart(id),
+  foreign key (order_item_id) references aixada_order_item(id),
   foreign key (product_id) references aixada_product(id),	
-  key (ts_validated),
-  foreign key (operator_id) references aixada_user(id) 	
-) ENGINE=InnoDB default character set utf8;
+  unique key (cart_id, product_id, order_item_id)
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
+
+/**
+ * temporary table where order items gets stored during revision of
+ * products. once revision is finished, items get copied into aixada_shop_item
+ * and deleted here. 
+ */
+create table aixada_order_to_shop (
+  order_item_id  	int		  	not null,
+  uf_id     	  	int 		not null,	
+  order_id			int 		default null,
+  unit_price_stamp	decimal(14,6)	default 0,
+  iva_percent		decimal(5,2)	default 0,
+  rev_tax_percent	decimal(5,2)	default 0,
+  product_id	  	int 		not null,	
+  quantity 	  		float(10,4) default 0.0,
+  arrived 			boolean		default true,
+  revised			boolean 	default false,
+  foreign key (order_id) references aixada_order(id),
+  foreign key (product_id) references aixada_product(id),
+  foreign key (uf_id) references aixada_uf(id)
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
+
+
+/**
+ * Types of stock movements such as stock corrected, loss, etc. 
+ */
+create table aixada_stock_movement_type(
+  id              int     not null auto_increment,
+  name            varchar(30) not null, 
+  description     varchar(255),
+  primary key (id)
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
 /**
@@ -312,19 +376,21 @@ create table aixada_stock_movement (
   id          		int			not null auto_increment,
   product_id  		int 		not null,
   operator_id		int 		not null,
+  movement_type_id int not null,
   amount_difference	decimal(10,4),
   description  		varchar(255),
   resulting_amount	decimal(10,4),
-  ts   	  		timestamp 	default current_timestamp,
+  ts   	  			timestamp 	default current_timestamp,
   primary key (id),
   foreign key (product_id) references aixada_product(id), 
   foreign key (operator_id) references aixada_user(id),
+  foreign key (movement_type_id) references aixada_stock_movement_type(id),
   key (ts)
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8;
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
 /**
- * Stores different payment methods
+ * Stores different payment and transfer methods
  */
 create table aixada_payment_method (
   id   	     	tinyint   not null auto_increment,
@@ -343,13 +409,13 @@ create table aixada_currency (
   name		 	varchar(50) 	not null,
   one_euro	 	decimal(10,4)  	not null, 
   primary key (id)
-) engine=InnoDB default character set utf8;
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
 /* 
  *   Account numbers:
  *  -1          Manteniment
- *  -2	       Consum
+ *  -2	       	Consum
  *  1001..1999  regular UF accounts of the form 1000 + uf_id
  *  2001..2999  regular provider account of the form 2000 + provider_id
  */   
@@ -370,10 +436,7 @@ create table aixada_account (
   foreign key(operator_id) references aixada_user(id),
   foreign key(payment_method_id) references aixada_payment_method(id),
   foreign key(currency_id) references aixada_currency(id)
-) engine = InnoDB default character set utf8;
-
-
-
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
 
@@ -385,7 +448,7 @@ create table aixada_incident_type (
   description 		varchar(255)   	not null,
   definition 		text 		not null,
   primary key (id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8;
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
 
@@ -400,17 +463,39 @@ create table aixada_incident (
   operator_id  			int             not null,
   details	      		text,
   priority              int             default 3,
-  ufs_concerned         varchar(100),
-  commission_concerned  varchar(100),
-  provider_concerned    varchar(100),
+  ufs_concerned         int,
+  commission_concerned  int,
+  provider_concerned    int,
   ts					timestamp 	default current_timestamp,  
   status                varchar(10)     default 'Open',
   primary key (id),
   foreign key (incident_type_id) references aixada_incident_type(id),
   foreign key (operator_id) references aixada_user(id),
   key (ts)
-) ENGINE=InnoDB DEFAULT CHARACTER SET utf8;
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
+/**
+ *	Evolution of prices
+ **/
+create table aixada_price (
+  product_id     	int   not null,
+  ts                    timestamp       default current_timestamp,
+  current_price    	decimal(10,2)   not null,
+  operator_id           int,
+  primary key (product_id, ts),
+  foreign key (product_id) references aixada_product(id),
+  foreign key (operator_id) references aixada_user(id)
+) engine=InnoDB default character set utf8 collate utf8_general_ci;
 
 
+/**
+ * Account descriptions 
+ **/
+create table aixada_account_desc (
+  id            smallint    not null auto_increment,
+  description   varchar(50) not null,
+  account_type  tinyint     default 1, -- 1:treasury, 2:service
+  active        tinyint     default 1,
+  primary key (id)
+) engine=InnoDB default character set utf8 collate utf8_general_ci;

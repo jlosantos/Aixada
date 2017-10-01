@@ -1,39 +1,228 @@
 delimiter |
 
-drop procedure if exists account_extract|
-create procedure account_extract(in the_account_id int, in tmp_start_date date, in num_rows int)
+
+
+
+drop  procedure if exists account_exists|
+create procedure account_exists(in the_account_id int)
 begin
-  declare start_date datetime default if(tmp_start_date=0, date(sysdate()), date_add(tmp_start_date, interval 1 day)); 
-        /* This is to also catch movements on the same day as the start date */
-		/*  if tmp_start_date = 0 then set start_date = date_add(sysdate(), interval -3 month); end if; */
-  set @q = concat("select
-    a.id,
-    a.ts, 
-    a.quantity,
-    a.description as description,
-    a.account_id as account,
-    p.description as method,
-    c.name as currency,
-    ifnull(mem.name, 'default') as operator,
-    balance
- from aixada_account a
- left join aixada_currency c
-   on a.currency_id = c.id
- left join aixada_payment_method p
-   on a.payment_method_id = p.id
- left join aixada_user u
-   on a.operator_id = u.id
- left join aixada_member mem
-   on u.member_id = mem.id
- where 
-   a.account_id = ", the_account_id, " and
-   a.ts <= '", start_date, "'
- order by ts desc limit ", num_rows);
-  prepare st from @q;
-  execute st;
-  deallocate prepare st;
+  select
+    count(*)
+  from 
+    aixada_account
+  where
+    account_id = the_account_id;
 end|
 
+
+/**
+ * Generic procedure to handle either deposit or withdrawal for the given account. 
+ */
+drop procedure if exists move_money|
+create procedure move_money(in the_quantity decimal(10,2), 
+                            in the_account_id int, 
+                            in type_id int, 
+                            in the_operator_id int, 
+                            in the_description varchar(255),
+                            in the_currency_id int)
+begin
+
+    declare current_balance decimal(10,2);
+    declare new_balance decimal(10,2);
+  
+  -- get the current balance -- 
+    select 
+      balance 
+    into 
+      current_balance
+    from 
+      aixada_account
+    where 
+      account_id = the_account_id
+    order by ts desc, id desc
+    limit 1; 
+  
+    set new_balance = current_balance + the_quantity; 
+    
+    insert into 
+      aixada_account (account_id, quantity, payment_method_id, description, operator_id, balance, currency_id) 
+    values 
+      ( the_account_id, 
+        the_quantity, 
+        type_id, 
+        the_description, 
+        the_operator_id, 
+        new_balance, 
+        the_currency_id);
+
+end|
+
+
+
+/**
+ * procedure allows to manually correct / reset account balance. Mainly 
+ * should be used for the global accounts -3, -2, -1 not user accounts.
+ * in any case: it always adds the correct as a new line to the account in order
+ * to keep all changes traceable. 
+ */
+drop procedure if exists correct_account_balance|
+create procedure correct_account_balance(in the_account_id int, in the_balance decimal(10,2), in the_operator_id int, in the_description varchar(255))
+begin
+	
+	declare current_balance decimal(10,2);
+	declare quantity decimal(10,2);
+	
+	-- get the current balance -- 
+  	select 
+  		balance 
+  	into 
+  		current_balance
+  	from 
+  		aixada_account
+  	where 
+  		account_id = the_account_id
+  	order by ts desc, id desc
+  	limit 1; 
+	
+  	set quantity = -(current_balance - the_balance); 
+  	
+	insert into 
+  		aixada_account (account_id, quantity, payment_method_id, description, operator_id, balance) 
+  	values 
+  		(the_account_id, 
+  	 	 quantity, 
+  	 	9, 
+  	 	the_description, 
+  	 	the_operator_id, 
+  	 	the_balance);
+	
+end|
+
+/**
+ * returns the current balance of a given account
+ */
+drop procedure if exists get_account_balance|
+create procedure get_account_balance(in the_account_id int)
+begin
+
+	select
+		*
+	from
+		aixada_account
+	where
+		account_id = the_account_id 
+	order by
+		ts desc, id desc
+	limit 1;
+end|
+
+/**
+ * returns the current balance of Caixa (-3), Consum (-2), Mantenimient (-1)
+ */
+drop procedure if exists global_accounts_balance|
+create procedure global_accounts_balance()
+begin
+
+	(select
+		*
+	from
+		aixada_account
+	where
+		account_id = -2 
+	order by
+		ts desc, id desc
+	limit 1)
+	union all
+	(select
+		*
+	from
+		aixada_account
+	where
+		account_id = -2 
+	order by
+		ts desc, id desc
+	limit 1)
+	union all
+	(select
+		*
+	from
+		aixada_account
+	where
+		account_id = -3 
+	order by
+		ts desc, id desc
+	limit 1);
+end|
+
+
+/**
+ * retrieves all ufs with negative balance
+ */
+drop procedure if exists negative_accounts|
+create procedure negative_accounts()
+begin
+  select 
+	uf.id as uf, 
+	uf.name, 
+	a.balance, 
+	a.ts as last_update 
+  from (select 
+			account_id, max(id) as MaxId 
+		from 
+			aixada_account 
+		group by 
+			account_id) r, aixada_account a, aixada_uf uf
+  where 
+	a.account_id = r.account_id 
+	and a.id = r.MaxId
+	and a.balance < 0
+    and uf.active = 1
+    and uf.id = a.account_id -1000
+  order by
+	a.balance;
+end|
+
+
+/**
+ * retrieves account movements for a given date range
+ */
+drop procedure if exists get_extract_in_range|
+create procedure get_extract_in_range(in the_account_id int, in from_date date, in to_date date)
+begin
+	select
+    	a.id,
+	    a.ts, 
+	    a.quantity,
+	    a.description as description,
+	    a.account_id as account,
+	    p.description as method,
+	    c.name as currency,
+	    ifnull(mem.name, 'default') as operator,
+	    a.balance
+ 	from 
+ 		aixada_account a,
+ 		aixada_payment_method p,
+ 		aixada_user u,
+ 		aixada_member mem,
+ 		aixada_currency c
+ 	where 
+ 		a.account_id = the_account_id
+ 		and a.ts >= from_date 
+ 		and a.ts <= to_date 
+ 		and a.currency_id = c.id
+ 		and a.payment_method_id = p.id
+ 		and a.operator_id = u.id
+ 		and u.member_id = mem.id
+ 	order by 
+ 		a.ts desc, id desc; 
+ 
+end|
+
+
+/**
+ * retrieves latest account movements 
+ * could and should be integrated into get_extract_in_range()
+ */
 drop procedure if exists latest_movements|
 create procedure latest_movements()
 begin
@@ -41,11 +230,7 @@ begin
 
   select
     a.id,
-/*
-    case a.account_id 
-      when -3 then 'Caixa' when -2 then 'Consum' when -1 then 'Manteniment' else a.account_id
-    end as account_id,
-*/  a.account_id,
+  	a.account_id,
     time(a.ts) as time, 
     a.quantity,
     p.description as method,
@@ -65,97 +250,30 @@ begin
    on a.account_id - 1000 = uf.id
  where a.account_id > 0
    and a.ts < tomorrow
- order by a.ts desc limit 10;
+ order by a.ts desc, id desc
+ limit 10;
 end|
 
-drop procedure if exists deposit_for_uf|
-create procedure deposit_for_uf(in the_account_id int, in qty decimal(10,2), in the_description varchar(255), in op int)
+
+
+
+drop procedure if exists income_spending_balance|
+create procedure income_spending_balance(in tmp_date date)
 begin
-  declare current_balance decimal(10,2);
-
-  select balance
-  into current_balance
-  from aixada_account
-  where account_id = the_account_id 
-  order by ts desc
-  limit 1;
-        
-  insert into aixada_account (
-    account_id, quantity, description, operator_id, balance
-  ) values (
-    the_account_id, qty, the_description, op, current_balance + qty
-  );
-
-  update aixada_account_balance
-  set balance = current_balance + qty
-  where account_id = the_account_id;
-
-  if the_account_id != -3 then  
-  /* Account 3 is Caixa. So we update Caixa whenever we haven't inserted directly into Caixa. */
-    select balance
-    into current_balance
-    from aixada_account
-    where account_id = -3
-    order by ts desc
-    limit 1;
-
-  /* ufs make a positive deposit, movements to Consum(-2) make a negative deposit to caixa */
-    insert into aixada_account (
-      account_id, quantity, description, operator_id, balance
-    ) values (
-      -3, if(the_account_id > 0, qty, -qty), the_description, op, 
-          current_balance + if(the_account_id > 0, qty, -qty)
-    );
-
-    update aixada_account_balance
-    set balance = current_balance + if(the_account_id > 0, qty, -qty)
-    where account_id = -3;
-  end if;
-
-end|
-
-/* old version of negative_accounts*/
-/*drop procedure if exists negative_accounts|
-create procedure negative_accounts()
-begin
-  select u.id as UF,
-        u.name as name,
-        balance, 
-        last_update
-  from aixada_account_balance b
-  left join aixada_uf u
-  on u.id = account_id-1000
-  where u.active = 1
-  and  account_id between 1000 and 2000
-  and balance < 0
-  order by balance;
-end|*/
-
-drop procedure if exists negative_accounts|
-create procedure negative_accounts()
-begin
-  select 
-	uf.id as uf, 
-	uf.name, 
-	a.balance, 
-	a.ts as last_update 
-  from (select 
-			account_id, max(ts) as MaxDate 
-		from 
-			aixada_account 
-		group by 
-			account_id) r, aixada_account a, aixada_uf uf
-  where 
-	a.account_id = r.account_id 
-	and a.ts = r.MaxDate
-	and a.balance < 0
-    and uf.active = 1
-    and uf.id = a.account_id -1000
-  order by
-	a.balance;
+   declare today date default case tmp_date when 0 then date(sysdate()) else date(tmp_date) end;
+   select 
+     sum( 
+       case when quantity>0 then quantity else 0 end
+     ) as income,
+     sum(
+       case when quantity<0 then quantity else 0 end
+     ) as spending,
+     sum(quantity) as balance
+   from aixada_account a
+   use index (ts)
+   where a.ts between today and date_add(today, interval 1 day) and
+         a.account_id = -3;
 end|
 
 
 delimiter ;
-
-   

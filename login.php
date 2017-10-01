@@ -1,19 +1,7 @@
 <?php
+require_once("php/inc/header.inc.base.php");
 
-
-//require_once('FirePHPCore/lib/FirePHPCore/FirePHP.class.php');
-ob_start(); // Starts FirePHP output buffering
-//$firephp = FirePHP::getInstance(true);
-
-require_once 'inc/cookie.inc.php';
-require_once 'inc/authentication.inc.php';
-require_once 'lib/exceptions.php';
-require_once 'local_config/config.php';
-$language = ( (isset($_SESSION['userdata']['language']) and $_SESSION['userdata']['language'] != '') ? $_SESSION['userdata']['language'] : configuration_vars::get_instance()->default_language );
-$default_theme = configuration_vars::get_instance()->default_theme; 
-$dev = configuration_vars::get_instance()->development;
-require_once('local_config/lang/' . $language . '.php');
-
+require_once(__ROOT__ . 'php'.DS.'inc'.DS.'authentication.inc.php');
 
 // This controls if the table_manager objects are stored in $_SESSION or not.
 // It looks like doing it cuts down considerably on execution time.
@@ -28,83 +16,62 @@ if (!isset($_SESSION)) {
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="<?=$language?>" lang="<?=$language?>">
 <head>
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-	<title> <?php print $Text['global_title']; ?> </title>
+	<title> <?php print $Text['global_title'] . " - " . $Text['ti_login_news'];?> </title>
 	
 	<link rel="stylesheet" type="text/css"   media="screen" href="css/aixada_main.css" />
     <link rel="stylesheet" type="text/css"   media="screen" href="css/ui-themes/<?=$default_theme;?>/jqueryui.css"/>
 	
-   <?php if (isset($dev) && $dev == true ) { ?> 
-	    <script type="text/javascript" src="js/jquery/jquery.js"></script>
-		<script type="text/javascript" src="js/jqueryui/jqueryui.js"></script>
-	   	<script type="text/javascript" src="js/aixadautilities/jquery.aixadaXML2HTML.js" ></script>
-	   	<script type="text/javascript" src="js/aixadautilities/jquery.aixadaUtilities.js" ></script>	
-   	<?php  } else { ?>
-	   	<script type="text/javascript" src="js/js_for_login.min.js"></script>
-    <?php }?>
+   
+	<script type="text/javascript" src="js/jquery/jquery.js"></script>
+	<script type="text/javascript" src="js/jqueryui/jqueryui.js"></script>
+	<?php echo aixada_js_src(false); ?>	
+   	
+    <style><?php
+        $login_header_image =
+            get_config('login_header_image', 'img/aixada_header800.150.png');
+        if ($login_header_image) {
+            echo "p#logonHeader {background-image: url({$login_header_image});}";
+        } else {
+            echo "p#logonHeader {background-image: none;}";
+        }
+    ?></style>
 	   	
 	
 	   	
 	<script type="text/javascript">
 		$(function(){
+			$.ajaxSetup({ cache: false });
 
-			$('#registerWrap').hide();
-
-			//detect form submit and prevent page navigation; we use ajax. 
- 			$('form').submit(function() { 
- 				return false; 
- 			});
-
-
-			function checkLength(input, min, max, where, msg ) {
-				if ( input.val().length > max || input.val().length < min ) {
-					input.addClass( "ui-state-error" );
-					$.updateTips(where,'error', msg);
-					return false;
-				} else {
-					return true;
-				}
-			}
-
-			function checkRegexp( o, regexp, n ) {
-				if ( !( regexp.test( o.val() ) ) ) {
-					o.addClass( "ui-state-error" );
-					$.updateTips($('#registerMsg'), 'error', n );
-					return false;
-				} else {
-					return true;
-				}
-			}
-
-			function checkPassword(pwd, retyped){
-				
-				if (pwd.val() != retyped.val()){
-					pwd.addClass( "ui-state-error" );
-					$.updateTips('#registerMsg','error', "<?php echo $Text['msg_err_pwdctrl']; ?>");
-					return false; 
-				} else {
-					return true; 
-				}
-			}
-
-			function resetForms(){
-				$('input').not(':submit, :button').val('').removeClass('ui-state-error');
-				$('.user_tips').removeClass('ui-state-error success_msg').text('');
-				$('#register').show();
-			}
-
+			document.cookie = 'USERAUTH=';
 			
 			/**
-			 *	logno stuff
+			 *	logon stuff
 			 */
 			$('#btn_logon').button();
 			$('#login').submit(function(){
 				var dataSerial = $(this).serialize();
+				//alert(dataSerial);
 				$.ajax({
 					type: "POST",
-                    url: "ctrlLogin.php?oper=login",
+                    url: "php/ctrl/Login.php?oper=login",
 					data:dataSerial,		
-					success: function(msg){			
-                        top.location.href = 'index.php';
+					success: function(returned_cookie){
+					    /*
+					      FIXME
+					      there are two very basic security issues here:
+					      1. the dataSerial is posted unencrypted, and so is visible to everyone!
+					      Even encrypting the username/password is no solution, because anyone who intercepts the communication
+					      can just send the encrypted text without knowing what it decrypts to, but can log in anyways.
+					      The solution could be to implement an SSL protocol.
+					      2. The cookie never expires.
+					      This has two parts: here in document.cookie we could set an expiry date;
+					      on the other hand, if the cookie is seen to have expired in cookie.inc.php, 
+					      it is just renewed without any consequence.
+					     */
+					    document.cookie = 'USERAUTH=' + escape(returned_cookie);
+					    
+					    top.location.href = 'index.php';
+					    
 					},
 					error : function(XMLHttpRequest, textStatus, errorThrown){
 						$.updateTips('#logonMsg','error',XMLHttpRequest.responseText);
@@ -115,150 +82,50 @@ if (!isset($_SESSION)) {
 			});
 
 			
-			/**
-			 *	register stuff
-			 */
-			$('#btn_register').button({
-				icons: {
-				primary: "ui-icon-check"}
-			});
-
-			$('#switch2register').bind('click',function(){
-				$('#stagewrap').hide();
-				$('#registerWrap').show();
-				$('#registerMsg')
-					.removeClass('success_msg')
-					.text('');
-				$('#register').show();
-			});
 			
-					
-
-
-			//send the register form
-			$('#register').submit(function(){
-
-				var dataSerial = $(this).serialize();
-				var bValid = true; 
-
-				 
-				bValid = bValid && checkLength($('#reg_login'),3,50,'#registerMsg',"<?echo $Text['msg_err_usershort'];?>");
-				bValid = bValid && checkLength($('#reg_password'),4,15,'#registerMsg',"<?echo $Text['msg_err_passshort'];?>"); 
-				bValid = bValid && checkPassword($('#reg_password'), $('#reg_password_ctrl'));
-				bValid = bValid && checkLength($('#name'),1,50,'#registerMsg',"<?php echo $Text['name_person'] .  $Text['msg_err_notempty'];?>");
-				bValid = bValid && checkRegexp($('#phone1'),/^([0-9\s\+])+$/,"<?php echo $Text['phone1'] .  $Text['msg_err_only_num'];?>");
-								
-				// From jquery.validate.js (by joern), contributed by Scott Gonzalez: http://projects.scottsplayground.com/email_address_validation/
-				bValid = bValid && checkRegexp( $('#email'), /^((([a-z]|\d|[!#\$%&'\*\+\-\/=\?\^_`{\|}~]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])+(\.([a-z]|\d|[!#\$%&'\*\+\-\/=\?\^_`{\|}~]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])+)*)|((\x22)((((\x20|\x09)*(\x0d\x0a))?(\x20|\x09)+)?(([\x01-\x08\x0b\x0c\x0e-\x1f\x7f]|\x21|[\x23-\x5b]|[\x5d-\x7e]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(\\([\x01-\x09\x0b\x0c\x0d-\x7f]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF]))))*(((\x20|\x09)*(\x0d\x0a))?(\x20|\x09)+)?(\x22)))@((([a-z]|\d|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(([a-z]|\d|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*([a-z]|\d|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])))\.)+(([a-z]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])|(([a-z]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])([a-z]|\d|-|\.|_|~|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*([a-z]|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])))\.?$/i, "<?=$Text['msg_err_email'];?>" );
-				//bValid = bValid && checkRegexp( password, /^([0-9a-zA-Z])+$/, "Password field only allow : a-z 0-9" );
-			
-				
-				 if (bValid){
-						
-						$.ajax({
-							type: "POST",
-							url: "ctrlLogin.php?oper=registerUser",	
-							data : dataSerial, 	
-							success: function(msg){	
-								//$.updateTips("#registerMsg", "success","", 600000 );	
-
-								 $( "#dialog-message p" )
-							    	.html("<?php echo $Text['msg_reg_success']; ?>")
-							    	.addClass('success_msg');
-							    
-								$( "#dialog-message" )
-									.dialog({ title: 'Succesful registratio' })
-									.dialog("open");
-									
-								$('#registerWrap').hide();
-								
-							},
-							error : function(XMLHttpRequest, textStatus, errorThrown){
-						 
-							    $( "#dialog-message p" )
-							    	.html(XMLHttpRequest.responseText)
-							    	.addClass('ui-state-error');
-							    
-								$( "#dialog-message" )
-									.dialog({ title: 'Error' })
-									.dialog("open");
-							},
-							complete : function(msg){
-								
-							}
-						}); //end ajax retrieve date
-
-				}
-
-				return false; 
-				
-				 
-			});//end submit
-
 			/**
-			 * Error message dialog 
+			 * forgot pwd dialog
 			 */
-			$( "#dialog-message" ).dialog({
-				modal: false,
+			$('#dialog-recuperatePwd').dialog({
 				autoOpen:false,
-				buttons: {
-					Ok: function() {
-						$( this ).dialog( "close" );
-
-						if ($("p",this).hasClass('success_msg')){
-							resetForms();
-							$('#stagewrap').show();
-						}
+				buttons: {  
+					"<?=$Text['btn_ok'];?>" : function(){
+							$.ajax({
+								type: "POST",
+								url: '',
+								success: function(txt){
+									
+								},
+								error : function(XMLHttpRequest, textStatus, errorThrown){
+									$.showMsg({
+										msg:XMLHttpRequest.responseText,
+										type: 'error'});
+									
+								}
+							});
+		
 						
-						$("p",this)
-				    	.html('')
-				    	.removeClass('ui-state-error success_msg');
-					}
+						},
+							
+					"<?=$Text['btn_close'];?>"	: function(){
+							$( this ).dialog( "close" );
+						}
 				}
 			});
-
 			
-			$('#btn_cancel')
-				.button({
-					icons: {
-					primary: "ui-icon-close"}
-				})
-				.click(function(){
-					resetForms();
-					$('#registerWrap').hide();
-					$('#stagewrap').show();
-					
-				});
 	
 				
 			/**
 			 *	incidents
 			 */
-			$('#tbl_incidents tbody').xml2html('init',{
-					url: 'smallqueries.php',
-					params : 'oper=latestIncidents',
-					loadOnInit: true,
-					paginationNav : '#tbl_incidents tfoot td'
+			$('#newsWrap').xml2html('init',{
+					url: 'php/ctrl/Incidents.php',
+					params : 'oper=getIncidentsListing&filter=pastWeek&type=3',
+					loadOnInit: true
 			});
 
 
-			/**
-			 *	language
-			 */
-			 $("#pref_lang")
-				.xml2html("init", {
-						url: "smallqueries.php",
-						params : "oper=getExistingLanguages",
-						rowName : "language",
-						loadOnInit: true,
-						complete : function(){
-							$("#pref_lang").val("<?php echo $language; ?>"); 
-						}
-			});
-
-			$('a.toggleIncidentDetails').live('click',function(){
-				$(this).closest('tr').next().toggle();
-			});
+			
 
 
 			/**
@@ -286,48 +153,37 @@ if (!isset($_SESSION)) {
 <div id="wrap">
 
 	<div id="headwrap">
-		<p id="logonHeader"></p>
+		<p id="logonHeader"><span><?php 
+            if (get_config('login_header_show_name', false)) {
+                echo $Text['coop_name']; 
+            } ?></span></p>
 	</div>
 
-	<div id="stagewrap">
-	
-		<div id="newsWrap" class="ui-widget">
+	<div id="stagewrap" class="ui-widget">
+		
+		<div class="floatLeft aix-layout-splitW20 aix-layout-widget-left-col hidden">
 			<div class="ui-widget-content ui-corner-all">
-			<h2 class="ui-widget-header ui-corner-all"><?php echo $Text['ti_login_news'];?></h2>
-			<table id="tbl_incidents">
-				<thead>
-					<tr>
-						<th><?php echo $Text['subject'];?></th>
-						<th><?php echo $Text['created_by'];?></th>
-						<th><?php echo $Text['created'];?></th>
-					</tr>
-				</thead>
-				<tbody>
-					<tr>
-						<td><a href="javascript:void(null)" class="toggleIncidentDetails">{subject}</a></td>
-						<td>{uf}-{user}</td>
-						<td>{date_posted}</td>
-					</tr>
-					<tr class="hidden">
-							<td colspan="3" class="noBorder incidentsDetails">{details}</td>
-							
-					</tr>
-				</tbody>
-				<tfoot>
-				<tr>
-					<td colspan="2"></td>
-				</tr>
-				</tfoot>
-			</table>
+				<h4 class="ui-widget-header">Global info</h4>
 			</div>
 		</div>
 		
-		<div id="logonWrap" class="ui-widget">
+		<div class="floatLeft aix-layout-splitW50 aix-layout-widget-center-col">
+			<div id="newsWrap">
+				<div class="portalPost">
+					<h2 class="subject">{subject}</h2>
+					<p class="info"><?php echo $Text['posted_by']; ?> {user_name} (<?php echo $Text['uf_short'] ;?>{uf_id}),  {ts} </p>
+					<p class="msg">{details}</p>
+				</div>
+			</div>
+		</div>
+	
+		
+		<div id="logonWrap" class="aix-layout-splitW20">
 			<div class="ui-widget-content ui-corner-all">
 			<h4 class="ui-widget-header ui-corner-all"><?php echo $Text['login'];?></h4>
 			<p id="logonMsg" class="user_tips  minPadding"></p>
-			<form id="login" method="post">
-				<table>
+			<form id="login" method="post" class="padding15x10">
+				<table class="tblForms">
 					<tr>
 						<td><label class="formLabel" for="login"><?=$Text['logon'];?>:</label></td>
 						<td><input type="text" class="inputTxtSmall ui-widget-content ui-corner-all " name="login" id="login"/></td>
@@ -337,12 +193,14 @@ if (!isset($_SESSION)) {
 						<td><input type="password" class="inputTxtSmall ui-widget-content ui-corner-all" name="password" id="password"/></td>
 					</tr>
 					<tr>
-						<td>
-							<a href="javascript:void(null)" id="switch2register"><?=$Text['register']; ?></a>	
-						</td>
-						<td class="textAlignRight">
-							<button name="submitted" id="btn_logon"><?=$Text['btn_login'];?></button>
-							
+						<td colspan="2"><div>&nbsp;</div></td>
+					</tr>
+					<tr>
+						
+						<td colspan="2">
+							<div class="textAlignLeft">
+								<button name="submitted" id="btn_logon"><?=$Text['btn_login'];?></button>
+							</div>
 						</td>
 					</tr>
 				</table>
@@ -350,90 +208,22 @@ if (!isset($_SESSION)) {
 			</form>
 		</div>
 	</div><!-- end logonwrap -->
+	
+	
+	
 	</div><!-- end stagewrap -->
 	
-	<div id="registerWrap" class="ui-widget ui-corner-all">
-		<div class="ui-widget-content ui-corner-all">
-			<h4 class="ui-widget-header ui-corner-all"><?=$Text['register'];?></h4>
-			<p id="registerMsg" class="user_tips minPadding"></p>
-			<form id="register" method="post">
-				<table>
-					<tr>
-						<td><label class="formLabel" for="reg_login"><?=$Text['logon'];?>:</label></td>
-						<td><input type="text" class="ui-widget-content ui-corner-all " name="login" id="reg_login"> <sup>*</sup> &nbsp;</td>
-					</tr>
-					<tr>
-						<td><label class="formLabel" for="reg_password"><?=$Text['pwd'];?>:</label></td>
-						<td><input type="password" class="ui-widget-content ui-corner-all" name="password" id="reg_password"> <sup>*</sup> &nbsp;</td>
-					</tr>
-					<tr>
-						<td><label class="formLabel" for="reg_password_ctrl"><?=$Text['retype_pwd'];?>:</label></td>
-						<td><input type="password" class="ui-widget-content ui-corner-all " name="password_ctrl" id="reg_password_ctrl"> <sup>*</sup> &nbsp;</td>
-					</tr>
-					<tr>
-							<td><label for="name"><?php echo $Text['name_person'];?>:</label></td>
-							<td><input type="text" name="name" id="name" class="ui-widget-content ui-corner-all" /> <sup>*</sup> &nbsp;</td>
-						</tr>
-						<tr>
-							<td><label for="address"><?php echo $Text['address'];?>:</label></td>
-							<td colspan="4"><input type="text" name="address" id="address" class="inputTxtMax ui-widget-content ui-corner-all" /></td>
-						</tr>
-						<tr>
-							<td><label for="city"><?php echo $Text['city'];?>:</label></td>
-							<td><input type="text" name="city" id="city" class="ui-widget-content ui-corner-all" /></td>
-							<td><label for="zip"><?php echo $Text['zip'];?>:</label></td>
-							<td><input type="text" name="zip" id="zip" class="inputTxtSmall ui-widget-content ui-corner-all" /></td>
-							
-						</tr>
-						<tr>
-							<td><label for="phone1"><?php echo $Text['phone1'];?>:</label></td>
-							<td><input type="text" name="phone1" id="phone1" class="ui-widget-content ui-corner-all" /> <sup>*</sup> &nbsp;</td>
-						</tr>
-						<tr>
-							<td><label for="phone2"><?php echo $Text['phone2'];?>:</label></td>
-							<td><input type="text" name="phone2" id="phone2" class="ui-widget-content ui-corner-all" /></td>
-						</tr>
-						<tr>
-							<td><label for="email"><?php echo $Text['email'];?>:</label></td>
-							<td><input type="text" name="email" id="email" class="ui-widget-content ui-corner-all" /> <sup>*</sup> &nbsp;</td>
-						</tr>
-						<tr>
-							<td><label for="urls"><?php echo $Text['web'];?>:</label></td>
-							<td colspan="5"><input type="text" name="urls" id="urls" class="inputTxtMax ui-widget-content ui-corner-all" /></td>
-						</tr>
-						<tr>
-							<td><label for="notes"><?php echo $Text['notes'];?>:</label></td>
-							<td colspan="4"><textarea name="notes" id="notes" class="textareaMax ui-widget-content ui-corner-all"></textarea>
-							
-							</td>
-						</tr>
-					<tr>
-						<td><label class="formLabel" for="pref_lang"><?=$Text['lang'];?>:</label></td>
-						<td>
-							<select id="pref_lang" name="pref_lang">
-									<option value="{id}">{description}</option>
-							</select>
-						</td>
-					</tr>
-					<tr>
-						<td></td>
-						<td colspan="3"><sup>*</sup><?=$Text['required_fields']; ?></td>
-					</tr>
-					<tr>
-						<td colspan="4" class="textAlignRight">
-							<button name="cancel_register" type="reset" id="btn_cancel"><?=$Text['btn_cancel'];?></button>
-							<button name="submitted" type="submit" id="btn_register"><?=$Text['btn_submit'];?></button>
-						</td>
-					</tr>
-				</table>
 
-			</form>
-		</div>	
-	</div>
+
 </div>
 <div id="dialog-message" title="">
 	<p class="minPadding ui-corner-all"></p>
 </div>
+<div id="dialog-recuperatePwd">
+		<p>Please enter your email address here:</p>
+		<input type="text" name="email" value="" />
+</div>
+
 </body>
 </html>
 

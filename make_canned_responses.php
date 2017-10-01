@@ -1,12 +1,10 @@
 <?php
 
-require_once('FirePHPCore/lib/FirePHPCore/FirePHP.class.php');
-ob_start(); // Starts FirePHP output buffering
 
-require_once 'lib/table_manager.php';
-require_once 'inc/database.php';
-require_once 'utilities.php';
-require 'utilities_tables.php';
+require_once 'php/lib/table_manager.php';
+require_once 'php/inc/database.php';
+require_once 'php/utilities/general.php';
+require_once 'php/utilities/tables.php';
 
 $db = DBWrap::get_instance();
 
@@ -84,6 +82,11 @@ EOD;
   fclose($handle);
 }
 
+function write_column_names($col_names)
+{
+    file_put_contents('col_names.php', serialize($col_names));
+}
+
 function make_canned_responses($language = 'en')
 {
     $strPHP = <<<EOD
@@ -93,6 +96,7 @@ EOD;
 
 $tables = array();
 $col_names = array();
+$col_names_raw = array();
 $col_models = array();
 $active_fields = array();
 global $db;
@@ -101,14 +105,17 @@ $Text = '';
 require 'local_config/lang/' . $language . '.php';
 
 
-$rs = $db->Execute('SHOW TABLES');
+$rs = $db->Execute("SHOW TABLES LIKE 'aixada_%'");
 while ($row = $rs->fetch_array()) {
-  $tables[] = $row[0];
-  $tm = new table_manager($row[0]);
-  $col_names     [$row[0]] = get_names($tm);
-  $col_models    [$row[0]] = get_model($tm);
-  $active_fields [$row[0]] = get_active_field_names($tm);
- }
+    $current_table = $row[0];
+    $tables[] = $current_table;
+    $tm = new table_manager($current_table);
+    $col_names     [$current_table] = get_names($tm);
+    $col_names_raw [$current_table] = array_keys($tm->get_table_cols());
+    $col_models    [$current_table] = get_model($tm);
+    $active_fields [$current_table] = get_active_field_names($tm);
+}
+write_column_names($col_names_raw);
 $strPHP .= print_response('col_names', $col_names);
 $strPHP .= print_response('col_model', $col_models);
 $strPHP .= print_response('active_fields', $active_fields);
@@ -132,7 +139,7 @@ function make_canned_queries()
   $strSQL = "delimiter |\n\n";
 
   global $db;
-  $rs = $db->Execute('SHOW TABLES');
+  $rs = $db->Execute("SHOW TABLES LIKE 'aixada_%'");
   while ($row = $rs->fetch_array()) {
     $tables[] = $row[0];
   }
@@ -140,17 +147,36 @@ function make_canned_queries()
   foreach ($tables as $table) {
     $query_name = $table . '_list_all_query';
     $fkm = new foreign_key_manager($table);
-    $order_by_clause = ($table != 'aixada_unit_measure' ? 
-                        "' order by active desc, '" :
-                        "' order by '");
+    $order_by_clause = (in_array($table, array('aixada_unit_measure', 
+					       'aixada_iva_type',
+					       'aixada_account', 
+                 'aixada_stock_movement_type')) ? 
+                        "' order by '" :
+                        "' order by active desc, '");
+
+    $af_tablenames = array();
+    $af_names = array();
+    $af_aliases = array();
+    $af_join_clauses = array();
+    $af_after_which_field = array();
+
+    if ($table == 'aixada_member') {
+	// af = "additional field"
+	$af_tablenames[] = "aixada_user";
+	$af_names[] = "email";
+	$af_aliases[] = "email";
+	$af_join_clauses[] = "left join aixada_user as aixada_user on aixada_user.member_id=aixada_member.id";
+	$af_after_which_field[] = "aixada_member.name";
+    }
+
     $strSQL .= <<<EOD
 drop procedure if exists {$query_name}|
-create procedure {$query_name} (in the_index char(50), in the_sense char(4), in the_start int, in the_limit int, in the_filter char(100))
+create procedure {$query_name} (in the_index char(50), in the_sense char(4), in the_start int, in the_limit int, in the_filter text)
 begin
+  set @q = "{$fkm->make_canned_list_all_query($af_tablenames, $af_names, $af_aliases, $af_join_clauses, $af_after_which_field)}";
   set @lim = ' ';				 
  if the_filter is not null and length(the_filter) > 0 then set @lim = ' where '; end if;
   set @lim = concat(@lim, the_filter, {$order_by_clause}, the_index, ' ', the_sense, ' limit ', the_start, ', ', the_limit);
-  set @q = "{$fkm->make_canned_list_all_query()}";
   set @q = concat(@q, @lim);
   prepare st from @q;
   execute st;
@@ -165,6 +191,7 @@ EOD;
   return $strSQL;
 }
 
+/*
 foreach (glob("local_config/lang/*.php") as $lang_file) {
     $lang = basename($lang_file, '.php');
     $handle = @fopen('canned_responses_' . $lang . '.php', "w");
@@ -172,8 +199,12 @@ foreach (glob("local_config/lang/*.php") as $lang_file) {
     fwrite($handle, make_canned_responses($lang));
     fclose($handle);
 }
+*/
+make_canned_responses();
 
 write_file('sql/queries/canned_queries.sql', make_canned_queries());
 
-
-?>
+write_file(
+    'php/inc/header.inc.version.php',
+    "\$aixada_vesion_lastDate = '" . date('Ymd_His') . "';\n"
+);

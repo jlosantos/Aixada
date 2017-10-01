@@ -1,224 +1,285 @@
 delimiter |
 
-drop procedure if exists providers_with_active_products_for_shop|
-create procedure providers_with_active_products_for_shop (in the_date date) 
+
+
+/**
+ * returns the total of sold items for a given provider
+ */
+drop procedure if exists get_purchase_total_by_provider|
+create procedure get_purchase_total_by_provider (	in from_date date, 
+													in to_date date, 
+													in the_provider_id int, 
+													in the_group_by varchar(20))
 begin
-  select distinct
-    pv.id, 
-    pv.name 
+	
+	declare wherec varchar(255) default "";
+	declare groupby varchar(20) default "";
+	
+	if (the_provider_id > 0) then
+		set wherec = concat("and pv.id=",the_provider_id);
+	end if;
+	
+	if (the_group_by = "shop_date") then
+		set groupby = ", c.date_for_shop";
+	end if; 
+	
+	
+	set @q = concat("select
+		round(sum(si.quantity * si.unit_price_stamp),2) as total_sales_brutto,
+		round(sum(si.quantity * (si.unit_price_stamp / (1+si.rev_tax_percent/100) / (1+ si.iva_percent/100) )),2) as total_sales_netto,
+		round(sum(si.quantity * (si.unit_price_stamp / (1+ si.iva_percent/100) )),2) as total_sales_rev,
+		round(sum(si.quantity * (si.unit_price_stamp / (1+ si.rev_tax_percent/100) )),2) as total_sales_iva,
+	 	pv.name as provider_name,
+	 	pv.id as provider_id,
+	 	c.date_for_shop
+	from 
+		aixada_shop_item si, 
+		aixada_provider pv,
+		aixada_product p,
+		aixada_cart c
+	where
+		c.date_for_shop between '",from_date,"' and '",to_date,"'
+		and c.id = si.cart_id
+		and si.product_id = p.id
+		and p.provider_id = pv.id
+		",wherec,"
+	group by
+		pv.id ", groupby,"
+	order by
+		pv.name asc, c.date_for_shop desc;");
+		
+	prepare st from @q;
+  	execute st;
+  	deallocate prepare st;	
+  	
+end|
+
+drop function if exists sum_ordered_total|
+create function sum_ordered_total(the_date_for_shop date, the_provider_id int)
+returns decimal(10,2)
+reads sql data
+begin
+  declare total_price decimal(10,2);
+  
+  select 
+	sum(total) into total_price
   from 
-    aixada_provider pv 
-  left join aixada_product pr   
-    on pr.provider_id = pv.id 
-  left join aixada_product_orderable_for_date o
-    on pr.id = o.product_id
-  where 
-    pr.active = 1 and
-    pv.active = 1
-  order by pv.name;
+	aixada_order
+  where
+  	date_for_shop = the_date_for_shop
+  	and provider_id = the_provider_id; 
+  
+  return total_price;
+end|
+
+
+
+/**
+ * returns total of sold amount for given products of provider
+ * total netto, total brutto in given date range
+ */
+drop procedure if exists get_purchase_total_of_products|
+create procedure get_purchase_total_of_products(	in from_date date, 
+													in to_date date, 
+													in the_provider_id int, 
+													in is_validated boolean, 
+													in the_group_by varchar(20))
+begin
+	
+	declare wherec varchar(255) default "";
+	declare groupby varchar(20) default ""; 
+	
+	-- default, we use only validated carts
+	if (is_validated) then
+		set wherec = concat(" and c.ts_validated > 0 ");
+	end if; 
+	
+	-- filter for products of certain provider --
+	if (the_provider_id > 0) then
+		set wherec = concat(wherec, " and p.provider_id=", the_provider_id);
+	end if; 
+	
+	if (the_group_by = "shop_date") then
+		set groupby = "c.date_for_shop,";
+	end if; 
+	
+	
+	
+	set @q = concat("select 
+		p.name as product_name, 
+		p.active, 
+		p.orderable_type_id,
+		si.*,
+		c.date_for_shop,
+		pv.id as provider_id, 
+		pv.name as provider_name,
+		u.unit as shop_unit,
+		round(sum(si.quantity * si.unit_price_stamp),2) as total_sales_brutto,
+		round(si.unit_price_stamp / (1+si.rev_tax_percent/100 ) / (1+ si.iva_percent/100),2) as unit_price_stamp_netto,
+		round(sum(si.quantity * (si.unit_price_stamp / (1+si.rev_tax_percent/100) / (1+ si.iva_percent/100) )),2) as total_sales_netto,
+		sum(si.quantity) as total_sales_quantity
+	from
+		aixada_shop_item si, 
+		aixada_product p, 
+		aixada_provider pv, 
+		aixada_cart c,
+		aixada_unit_measure u
+	where
+		c.date_for_shop between '",from_date,"' and '",to_date,"'
+		and si.cart_id = c.id
+		and si.product_id = p.id
+		and p.provider_id = pv.id
+		and p.unit_measure_shop_id = u.id
+		", wherec, "
+	group by
+		", groupby," p.id
+	order by
+		p.name asc;");
+	
+	prepare st from @q;
+  	execute st;
+  	deallocate prepare st;
+
+		
+end|
+
+
+
+/**
+ * retrieves non-validated carts for all ufs or every uf
+ * also non-active ufs where there may be a non-validated cart
+ * remaining...
+ * could and should be integrated into get_purchase_listing
+ */
+drop procedure if exists get_non_validated_carts|
+create procedure get_non_validated_carts(in the_uf_id int)
+begin
+	
+	-- for a specififc uf --
+	if (the_uf_id > 0) then
+	
+		select
+			uf.id as uf_id, 
+			uf.name as uf_name, 
+			c.*,
+			get_purchase_total(c.id) as purchase_total
+		from
+			aixada_cart c,
+			aixada_uf uf
+		where
+			c.ts_validated = 0
+			and c.uf_id = the_uf_id
+			and uf.id = the_uf_id
+		order by
+			c.date_for_shop;
+	
+	-- every uf -- 
+	else 
+		select
+			uf.id as uf_id, 
+			uf.name as uf_name, 
+			c.*,
+			get_purchase_total(c.id) as purchase_total
+		from
+			aixada_cart c,
+			aixada_uf uf
+		where
+			c.ts_validated = 0
+			and c.uf_id = uf.id
+		order by
+			uf.id, c.date_for_shop; 
+	end if; 
+	
 end|
 
 
 /**
- * A query that returns all product categories
+ * returns listing of aixada_cart's for given uf and date range. 
+ * including the name and uf of the validation operator. 
+ * if uf_id is not set (0), then returns for all ufs 
  */
-drop procedure if exists product_categories_for_shop|
-create procedure product_categories_for_shop (in the_date date) 
+drop procedure if exists get_purchase_listing|
+create procedure get_purchase_listing(in from_date date, in to_date date, in the_uf_id int, in the_limit varchar(255))
 begin
-  select distinct
-    pc.id,
-    pc.description
-  from 
-    aixada_product pr
-  left join aixada_product_category pc
-    on pr.category_id = pc.id
-  left join aixada_product_orderable_for_date o
-    on pr.id = o.product_id
-  left join aixada_provider pv
-    on pr.provider_id = pv.id
-  where 
-    pr.active = 1 and
-    pv.active = 1;
-end|
+	
+	declare wherec varchar(255) default "";
+	declare set_limit varchar(255) default ""; 
+	
+	-- filter by uf_id --
+	if (the_uf_id > 0) then
+		set wherec = concat(" and c.uf_id = ",the_uf_id," and uf.id = ",the_uf_id);
+	else 
+		set wherec = concat(" and c.uf_id = uf.id");
+	end if; 
+	
+	-- set a limit?
+    if (the_limit <> "") then
+    	set set_limit = concat("limit ", the_limit);
+    end if;
+	
+	
+	
+	set @q =  concat("select 
+		c.*, 
+		uf.id as uf_id,
+		uf.name as uf_name,
+		m.name as operator_name,
+		m.uf_id as operator_uf,
+		get_purchase_total(c.id) as purchase_total
+	from 
+		aixada_uf uf,
+		aixada_cart c
+	left join 
+		aixada_user u
+	on 
+		c.operator_id = u.id
+	left join
+		aixada_member m
+	on 
+		u.member_id = m.id
+	where 
+		c.date_for_shop between '",from_date,"' and '",to_date,"'
+		",wherec,"
+	order by 
+		c.date_for_shop desc, uf.id desc
+		",set_limit,";"); 
+			
+	prepare st from @q;
+  	execute st;
+  	deallocate prepare st;
+end |
+
 
 /**
- * A query that returns all products eligible for shop
+ * for retrieving shop details (purchased products, quantities), see aixada_queries_cart.sql > procedure get_shop_cart
+ *
  */
-drop procedure if exists products_for_shop_by_provider|
-create procedure products_for_shop_by_provider (IN the_provider_id int, IN the_uf_id int, in the_date date)
-begin
-  declare the_shop_date datetime default the_date;
-  if (the_shop_date=0) then set the_shop_date = sysdate(); end if;
-  select distinct
-      p.id,
-      last_order_quantities(the_uf_id, the_shop_date, p.id) as last_orders,
-      p.name, 
-      p.description,
-      pv.name as provider_name,
-      category_id,
-      unit_price * (1 + iva_percent/100) as unit_price,
-      u.unit,
-      rev_tax_percent,
-      stock_actual
-  from 
-      aixada_product p
-   left join aixada_rev_tax_type t
-      on p.rev_tax_type_id = t.id
-   left join aixada_product_orderable_for_date o
-      on p.id = o.product_id
-   left join aixada_unit_measure u
-      on p.unit_measure_shop_id = u.id
-   left join aixada_provider pv
-      on p.provider_id = pv.id
-  where 
-      p.active = 1 and 
-      pv.active = 1 and
-      provider_id = the_provider_id
-  order by pv.id, p.name;
-end|
+
 
 /**
- * A query that returns all products eligible for shop of a certain category
- */
-drop procedure if exists products_for_shop_by_category|
-create procedure products_for_shop_by_category (IN the_category_id int, IN the_uf_id int, IN the_date date)
-begin
-  declare the_shop_date datetime default the_date;
-  if (the_shop_date=0) then set the_shop_date = sysdate(); end if;
-  select distinct
-      p.id,
-      last_order_quantities(the_uf_id, the_shop_date, p.id) as last_orders,
-      p.name, 
-      p.description,
-      pv.name as provider_name, 
-      category_id,
-      unit_price * (1 + iva_percent/100) as unit_price,
-      u.unit,
-      rev_tax_percent,
-      stock_actual
-  from 
-      aixada_product p
-   left join aixada_provider pv
-      on p.provider_id = pv.id
-   left join aixada_rev_tax_type t
-        on p.rev_tax_type_id = t.id
-   left join aixada_product_orderable_for_date o
-      on p.id = o.product_id
-   left join aixada_unit_measure u
-      on p.unit_measure_shop_id = u.id
-  where 
-      p.active = 1 and 
-      pv.active = 1 and
-      category_id = the_category_id
-  order by pv.id, p.name;
-end|
-
-/**
- * A query that returns all products eligible for shop
- * the variable uf_id is not used, unlike in the two preceding queries
- */
-drop procedure if exists products_for_shop_like|
-create procedure products_for_shop_like (in the_like varchar(255), IN the_uf_id int, in the_date date)
-begin
-  select distinct
-      p.id,
-      p.name, 
-      p.description,
-      pv.id as provider_id,
-      category_id,
-      unit_price * (1 + iva_percent/100) as unit_price,
-      u.unit,
-      rev_tax_percent,
-      stock_actual,
-      pv.name as provider_name
-  from 
-      aixada_product p
-      left join aixada_provider pv
-      on p.provider_id = pv.id
-      left join aixada_rev_tax_type t
-      on p.rev_tax_type_id = t.id
-      left join aixada_unit_measure u
-      on p.unit_measure_shop_id = u.id
-      left join aixada_product_orderable_for_date o
-      on p.id = o.product_id
-  where 
-      p.active = 1 and
-      pv.active = 1
-    and
-      p.name LIKE ConCAT('%', the_like, '%')
-  order by pv.id, p.name;   
-end|
-
-/**
- * Convert ordered items to shop items
- */
-drop procedure if exists convert_order_to_shop|
-create procedure convert_order_to_shop(IN uf int, IN order_date date)
-begin
-  replace into aixada_shop_item (
-    uf_id, date_for_shop, product_id, quantity
-  ) select i.uf_id, i.date_for_order, i.product_id, i.quantity
-    from aixada_order_item i
-    where date_for_order = order_date 
-      and uf_id = uf;
-end|
-
-/**
- * A query that returns all ordered products eligible for shopping
- */
-drop procedure if exists products_for_shopping| 
-create procedure products_for_shopping(IN the_date date, in the_uf int)
-begin
-  select
-      p.id,
-      last_order_quantities(i.uf_id, i.date_for_shop, p.id) as last_orders,
-      p.name,
-      p.description,
-      p.provider_id,  
-      pv.name as provider_name,
-      p.category_id, 
-      p.unit_price * (1 + p.iva_percent/100) as unit_price, 
-      u.unit,
-      rev_tax_percent,
-      i.quantity as quantity
-  from 
-      aixada_shop_item i
-      left join aixada_product p
-      on i.product_id = p.id 
-      left join aixada_provider pv
-      on p.provider_id = pv.id
-      left join aixada_rev_tax_type t
-      on p.rev_tax_type_id = t.id
-      left join aixada_unit_measure u
-      on p.unit_measure_shop_id = u.id
-  where 
-      i.date_for_shop = the_date
-  and i.ts_validated = 0
-  and i.uf_id = the_uf
-  order by p.provider_id, p.name;
-end|
-
-/*
- * A query that calculates the total of all sales items for a given uf and date
+ * returns the total of a given purchase by uf - cart. 
+ * Important: the unit_price_stamp of the shop item
+ * already contains IVA and Rev-tax!
  */ 
-drop function if exists total_price_of_shop_items|
-create function total_price_of_shop_items(the_date date, the_uf_id int)
+drop function if exists get_purchase_total|
+create function get_purchase_total(the_cart_id int)
 returns float(10,2)
 reads sql data
 begin
   declare total_price decimal(10,2);
+  
   select 
-    sum(i.quantity * p.unit_price * (1 + p.iva_percent/100) * (1 + t.rev_tax_percent/100)) 
-    into total_price
-    from aixada_shop_item i
-      left join aixada_product p
-        on i.product_id = p.id
-      left join aixada_rev_tax_type t
-        on t.id = p.rev_tax_type_id
-    where i.date_for_shop = the_date
-      and uf_id = the_uf_id
-      and i.ts_validated = 0;
+	sum( CAST(si.quantity * si.unit_price_stamp as decimal(10,2)) ) into total_price
+  from 
+	aixada_shop_item si
+  where
+	si.cart_id = the_cart_id;
+      
   return total_price;
 end|
 
+
+
+
 delimiter ;
+

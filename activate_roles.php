@@ -1,4 +1,4 @@
-<?php include "inc/header.inc.php" ?>
+<?php include "php/inc/header.inc.php" ?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="<?=$language;?>" lang="<?=$language;?>">
 <head>
@@ -9,17 +9,9 @@
   	<link rel="stylesheet" type="text/css"   media="screen" href="js/fgmenu/fg.menu.css"   />
     <link rel="stylesheet" type="text/css"   media="screen" href="css/ui-themes/<?=$default_theme;?>/jqueryui.css"/>
     
-    <?php if (isset($_SESSION['dev']) && $_SESSION['dev'] == true ) { ?> 
-	    <script type="text/javascript" src="js/jquery/jquery.js"></script>
-		<script type="text/javascript" src="js/jqueryui/jqueryui.js"></script>
-		<script type="text/javascript" src="js/fgmenu/fg.menu.js"></script>
-		<script type="text/javascript" src="js/aixadautilities/jquery.aixadaMenu.js"></script>     	 
-	   	<script type="text/javascript" src="js/aixadautilities/jquery.aixadaXML2HTML.js" ></script>
-	   	<script type="text/javascript" src="js/aixadautilities/jquery.aixadaUtilities.js" ></script>
-
-   	<?php  } else { ?>
-	   	 <script type="text/javascript" src="js/js_for_activate_roles.min.js"></script>
-    <?php }?>
+    <script type="text/javascript" src="js/jquery/jquery.js"></script>
+    <script type="text/javascript" src="js/jqueryui/jqueryui.js"></script>
+    <?php echo aixada_js_src(); ?>
    		
  	<script type="text/javascript" src="js/jqueryui/i18n/jquery.ui.datepicker-<?=$language;?>.js" ></script>
      
@@ -28,6 +20,8 @@
     <?php $the_role = $_SESSION['userdata']['current_role']; ?>
 	<script type="text/javascript">
 	$(function(){
+		$.ajaxSetup({ cache: false });
+
 			//init tabs
 			$("#tabs").tabs();
 
@@ -38,13 +32,13 @@
             var theRole = <?php echo '"' . $the_role . '"'; ?>
 
             $('#inactiveUsers').xml2html("reload",{
-                                    url     : 'ctrlActivateRoles.php',
+                                    url     : 'php/ctrl/ActivateRoles.php',
                                     tpl		: '<option value="{user_id}">{name}</option>',
                                     params	: 'oper=getDeactivatedUsers&role='+theRole
             });	
 
             $('#activeUsers').xml2html("reload",{
-				    url     : 'ctrlActivateRoles.php',
+				    url     : 'php/ctrl/ActivateRoles.php',
 				    tpl		: '<option value="{user_id}">{name}</option>',
 				    params	: 'oper=getActivatedUsers&role='+theRole
             });	
@@ -89,11 +83,20 @@
 				
 				var dataSerial = "user_ids="+user_id;
 				$.ajax({
-					type: "GET",
-					url: "ctrlActivateRoles.php?oper=activateUsers&role="+theRole,
+					type: "POST",
+					url: "php/ctrl/ActivateRoles.php?oper=activateUsers&role="+theRole,
 					data: dataSerial,
 					success: function(msg){
 						//$("input:submit").button( "option", "disabled", false);
+						$.showMsg({
+							msg:"<?php echo $Text['msg_edit_success']; ?>",
+							type: 'success'});
+					},
+					error : function(XMLHttpRequest, textStatus, errorThrown){
+						$.showMsg({
+							msg:XMLHttpRequest.responseText,
+							type: 'error'});
+						
 					},
 					complete : function(){
 						$("input:submit").button( "option", "disabled", false );
@@ -118,21 +121,21 @@
 <body>
 <div id="wrap">
 	<div id="headwrap">
-		<?php include "inc/menu2.inc.php" ?>
+		<?php include "php/inc/menu.inc.php" ?>
 	</div>
 	<!-- end of headwrap -->
 	
 	
-	<div id="stagewrap">
+	<div id="stagewrap" class="ui-widget">
 	
 		<div id="titlewrap">
-			
-      <h1><?php echo $Text['ti_mng_activate_users'] . $Text[$the_role];  ?>
+				
+    	  <h1><?php echo $Text['ti_mng_activate_users'] . $Text[$the_role];  ?>
 		    	
 		</div>
 		<form id="activeUsersForm">
 		
-		<div id="threeColWrap">
+		<div id="threeColWrap" >
 			<div id="leftColumn">
 				<h4><?php echo $Text['mo_inact_user'];?></h4>
 				<select multiple="multiple" size="15" class="multipleSelect" id="inactiveUsers">						

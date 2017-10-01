@@ -1,4 +1,4 @@
-<?php include "inc/header.inc.php" ?>
+<?php include "php/inc/header.inc.php" ?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="<?=$language;?>" lang="<?=$language;?>">
 <head>
@@ -10,35 +10,32 @@
   	<link rel="stylesheet" type="text/css"   media="screen" href="js/fgmenu/fg.menu.css"   />
     <link rel="stylesheet" type="text/css"   media="screen" href="css/ui-themes/<?=$default_theme;?>/jqueryui.css"/>
 
-    <?php if (isset($_SESSION['dev']) && $_SESSION['dev'] == true ) { ?> 
- 		<script type="text/javascript" src="js/jquery/jquery.js"></script>
-		<script type="text/javascript" src="js/jqueryui/jqueryui.js"></script>
-		<script type="text/javascript" src="js/fgmenu/fg.menu.js"></script>
-		<script type="text/javascript" src="js/aixadautilities/jquery.aixadaMenu.js"></script>     	 
-	   	<script type="text/javascript" src="js/aixadautilities/jquery.aixadaXML2HTML.js" ></script>
-	   	<script type="text/javascript" src="js/aixadautilities/jquery.aixadaUtilities.js" ></script>
-	   
-   	<?php  } else { ?>
-	    <script type="text/javascript" src="js/js_for_incidents.min.js"></script>
-    <?php }?>
-
+    <script type="text/javascript" src="js/jquery/jquery.js"></script>
+    <script type="text/javascript" src="js/jqueryui/jqueryui.js"></script>
+    <?php echo aixada_js_src(); ?>
    
 	<script type="text/javascript">
 	
 	$(function(){
+		$.ajaxSetup({ cache: false });
 
-		
-
-			
 		/**
 		 *	incidents
 		 */
-		$('#tbl_incidents tbody').xml2html('init',{
-				url: 'smallqueries.php',
-				params : 'oper=todaysIncidents',
-				loadOnInit: true
-		});
 
+		$('#tbl_incidents tbody').xml2html('init',{
+			url: 'php/ctrl/Incidents.php',
+			params : 'oper=getIncidentsListing&filter=today',
+			loadOnInit: true, 
+			complete : function(rowCount){
+				if (rowCount == 0){
+					$.showMsg({
+						msg:'<?php echo $Text['no_news_today']; ?>',
+						type: 'info'});
+				}
+				//$('#tbl_incidents tbody tr:even').addClass('rowHighlight'); 	
+			}
+	});
 
 		
 						
@@ -50,7 +47,7 @@
 <div id="wrap">
 
 	<div id="headwrap">
-		<?php include "inc/menu2.inc.php" ?>
+		<?php include "php/inc/menu.inc.php" ?>
 	</div>
 	<!-- end of headwrap -->
 	
@@ -74,7 +71,6 @@
 							<th class="mwidth-150"><?php echo $Text['created_by'];?></th>
 							<th class="mwidth-150"><?php echo $Text['created'];?></th>
 							<th><?php echo $Text['status'];?></th>
-							<th><?php echo $Text['incident_type'];?></th>
 							<th><?php echo $Text['provider_name'];?></th>
 							<th><?php echo $Text['ufs_concerned'];?></th>
 							<th><?php echo $Text['comi_concerned'];?></th>
@@ -86,10 +82,9 @@
 
 							<td field_name="incident_id">{id}</td>
 							<td field_name="priority">{priority}</td>
-							<td field_name="operator">{uf} {user}</td>
-							<td field_name="date_posted">{date_posted}</td>
+							<td field_name="operator">{uf_id} {user_name}</td>
+							<td field_name="date_posted">{ts}</td>
 							<td field_name="status">{status}</td>
-							<td field_name="type">{type}</td>
 							<td field_name="provider">{provider_concerned}</td>
 							<td field_name="ufs_concerned">{ufs_concerned}</td>
 							<td field_name="commission">{commission_concerned}</td>

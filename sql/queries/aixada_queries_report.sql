@@ -1,9 +1,15 @@
 delimiter |
 
+
+/**
+ *  most queries here are used by lib/report_manager.php for generating the order reports 
+ *  for download. 
+ */
+
+
 /**
 * return all orders for a given date and provider
 */
-
 drop procedure if exists orders_for_date_and_provider|
 create procedure orders_for_date_and_provider(IN order_date DATE, IN the_provider_id int) 
 begin
@@ -60,7 +66,7 @@ end|
  * report the total orders for all providers for a given date, in summary
  */
 drop procedure if exists summarized_orders_for_date|
-create procedure summarized_orders_for_date(IN order_date date)
+create procedure summarized_orders_for_date(in order_date date)
 begin
   select 
     pv.id as provider_id,
@@ -168,68 +174,6 @@ begin
   with rollup;
 end|
 
-/**
- * report the detailed preorders for a provider for a given date
- */
-drop procedure if exists detailed_preorders_for_provider_and_date|
-create procedure detailed_preorders_for_provider_and_date(in the_provider int)
-begin
-  select
-    p.name as product_name, 
-    p.description,
-    u.id as uf,
-    i.quantity as qty,
-    m.unit,
-    sum(i.quantity) as total_quantity,
-    convert(sum(i.quantity * p.unit_price), decimal(10,2)) as total_price
-  from
-    aixada_order_item i
-    left join aixada_product p
-    on i.product_id = p.id
-    left join aixada_unit_measure m
-    on p.unit_measure_order_id = m.id
-    left join aixada_uf u
-    on i.uf_id = u.id
-  where 
-    i.date_for_order = '1234-01-23'
-    and p.provider_id = the_provider
-  group by p.name, u.id
-  with rollup;
-end|
-
-/**
- * report the total orders for all providers for a given date, in detail
- */
-drop procedure if exists detailed_total_orders_for_date|
-create procedure detailed_total_orders_for_date(IN order_date date)
-begin
-  select
-    pv.name as provider_name, 
-    pv.email as email,
-    p.name as product_name, 
-    p.description,
-    p.iva_percent as iva,
-    i.uf_id as uf,
-    sum(i.quantity) as qty,
-    convert(sum(i.quantity * p.unit_price), decimal(10,2)) as total_price,
-    m.unit as unit
-  from 
-    aixada_order_item i 
-    left join aixada_product p
-    on i.product_id = p.id
-    left join aixada_provider pv
-    on p.provider_id = pv.id
-    left join aixada_unit_measure m
-    on p.unit_measure_order_id = m.id
-  where
-    i.date_for_order = order_date
-  group by
-    pv.id,
-    p.name,
-    i.uf_id
-  with rollup;
-end|
-
 drop procedure if exists spending_per_provider|
 create procedure spending_per_provider(in start_date date)
 begin
@@ -262,74 +206,6 @@ begin
   order by date_for_shop desc;
 end|
 
-
-drop procedure if exists future_shop_times_for_uf|
-create procedure future_shop_times_for_uf(in the_uf int)
-begin
-  declare first_future_date date default date_add(date(sysdate()), interval 1 day);
-  select 
-  	id, 
-  	date_for_shop
-  from 
-  	aixada_shop_item 
-  where 
-  	uf_id = the_uf
-  	and   date_for_shop >= first_future_date
-  	and   ts_validated = 0
-  group by 
-  	date_for_shop
-  order by 
-  	date_for_shop desc;
-end|
-
-	/*integrated into new version of procedure past_validated_shop_times_for_uf */
-	/*drop procedure if exists nonvalidated_shop_times_for_uf|
-	create procedure nonvalidated_shop_times_for_uf(in the_uf int)
-	begin
-	  select concat(id, ' ', date_for_shop, ' Comanda no validada') as shop_time
-	  from aixada_shop_item 
-	  where uf_id = the_uf
-	  and   ts_validated = 0
-	  group by date_for_shop
-	  order by date_for_shop desc;
-	end|*/
-
-
-	/*drop procedure if exists past_validated_shop_times_for_uf|
-	create procedure past_validated_shop_times_for_uf(in the_uf int)
-	begin
-	  declare first_past_date date default date_add(date(sysdate()), interval -6 month);
-	  declare  last_past_date date default date_add(date(sysdate()), interval -2 day);
-	  select concat(id, ' date:', date_for_shop, ' validated:', ts_validated) as shop_time
-	  from aixada_shop_item 
-	  where uf_id = the_uf
-	  and   date_for_shop between first_past_date and last_past_date
-	  and   ts_validated > 0
-	  group by date_for_shop
-	  order by date_for_shop desc;
-	end|*/
-
-drop procedure if exists shop_times_for_uf|
-create procedure shop_times_for_uf(in the_uf int)
-begin
-  declare first_past_date date default date_add(date(sysdate()), interval -6 month);
-  declare  last_past_date date default date_add(date(sysdate()), interval -2 day);
-  select 
-  	id, 
-  	date_for_shop, 
-  	ts_validated as validated
-  from 
-  	aixada_shop_item 
-  where 
-  	uf_id = the_uf
-  	and   (date_for_shop between first_past_date and last_past_date
-  	and   (ts_validated > 0 
-  	or    ts_validated = 0))
-  group by 
-  	date_for_shop
-  order by 
-  	date_for_shop desc;
-end|
 
 
 drop procedure if exists shopped_items_by_id|
